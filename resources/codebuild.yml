@@ -1,0 +1,104 @@
+Resources:
+  CodeBuild:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Name: ReactServerless-CodeBuild
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        # The downloaded source code for the build will come from CodePipeline
+        Type: CODEPIPELINE
+        Name: MyReactServerlessProject
+      Environment:
+        # Linux container with node installed
+        ComputeType: BUILD_GENERAL1_SMALL
+        Type: LINUX_CONTAINER
+        Image: "aws/codebuild/nodejs:8.11.0"
+      Source:
+        Type: CODEPIPELINE
+
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            pre_build:
+              commands:
+                - echo Change directory...
+                - cd static-site
+                - echo List directory files...
+                - ls
+                - echo Installing source NPM dependencies...
+                - npm install
+            build:
+              commands:
+                - echo List active directory...
+                - ls
+                - echo Build started on `date`
+                - npm run build
+            post_build:
+              commands:
+                # copy the contents of /build to S3
+                - aws s3 cp --recursive --acl public-read ./build s3://<your-bucket-name>/ 
+                # set the cache-control headers for service-worker.js to prevent
+                # browser caching
+                - >
+                  aws s3 cp --acl public-read 
+                  --cache-control="max-age=0, no-cache, no-store, must-revalidate" 
+                  ./build/service-worker.js s3://<your-bucket-name>/
+                # set the cache-control headers for index.html to prevent
+                # browser caching
+                - >
+                  aws s3 cp --acl public-read 
+                  --cache-control="max-age=0, no-cache, no-store, must-revalidate" 
+                  ./build/index.html s3://<your-bucket-name>/
+          artifacts:
+            files:
+              - '**/*'
+  # IAM role that allows CodeBuild to interact with S3, CloudWatch, and CloudFront
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - 
+            Effect: Allow
+            Principal:
+              Service:
+                - "codebuild.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /service-role/
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetBucketVersioning"
+                  - "s3:PutObject"
+                Resource: 
+                  - !GetAtt PipelineBucket.Arn
+                  - !Join ['', [!GetAtt PipelineBucket.Arn, "/*"]]
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetBucketVersioning"
+                  - "s3:PutObject"
+                  - "s3:PutObjectAcl"
+                Resource: 
+                  - !GetAtt Website.Arn
+                  - !Join ['', [!GetAtt Website.Arn, "/*"]]
+              -
+                Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "cloudfront:CreateInvalidation"
+                Resource:
+                  - "*"

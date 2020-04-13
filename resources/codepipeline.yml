@@ -1,0 +1,84 @@
+Resources:  
+  CodePipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      RoleArn: !GetAtt CodePipeLineRole.Arn
+      ArtifactStore:
+        Location: !Ref PipelineBucket
+        Type: S3
+      Stages:
+        - 
+          Name: Source
+          Actions: 
+            - 
+              Name: SourceAction
+              ActionTypeId: 
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: 1
+              OutputArtifacts: 
+                - 
+                  Name: ReactServerless
+              Configuration:
+                Owner: "{{resolve:secretsmanager:<your-aws-secret-name>:SecretString:SourceRepoOwner}}"
+                Repo: "{{resolve:secretsmanager:<your-aws-secret-name>:SecretString:SourceRepoName}}"
+                Branch: master
+                OAuthToken: "{{resolve:secretsmanager:<your-aws-secret-name>:SecretString:GitHubPersonalAccessToken}}"
+        -
+          Name: Build
+          Actions: 
+            - 
+              Name: BuildAction
+              ActionTypeId: 
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              InputArtifacts: 
+                - 
+                  Name: ReactServerless
+              OutputArtifacts: 
+                - 
+                  Name: ReactServerlessBuild
+              Configuration:
+                ProjectName: !Ref CodeBuild
+  # CodePipeline service role
+  CodePipeLineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - 
+            Effect: Allow
+            Principal:
+              Service:
+                - "codepipeline.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:GetBucketVersioning"
+                  - "s3:PutObject"
+                Resource: 
+                  - !GetAtt PipelineBucket.Arn
+                  - !Join ['', [!GetAtt PipelineBucket.Arn, "/*"]]
+              - 
+                Effect: Allow  
+                Action:
+                  - "codebuild:BatchGetBuilds"
+                  - "codebuild:StartBuild"
+                Resource: "*"
+  # Temp bucket for storing build artifacts
+  PipelineBucket: 
+    Type: 'AWS::S3::Bucket'
+    Properties: {}

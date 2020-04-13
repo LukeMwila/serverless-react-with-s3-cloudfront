@@ -12,8 +12,8 @@ resources:
   # S3
   - ${file(resources/s3-bucket.yml)}
   # CloudFront
-  #- ${file(resources/cloudfront.yml)}
+  - ${file(resources/cloudfront.yml)}
   # CodeBuild
-  #- ${file(resources/codebuild.yml)}
+  - ${file(resources/codebuild.yml)}
   # CodePipeline
-  #- ${file(resources/codepipeline.yml)}
+  - ${file(resources/codepipeline.yml)}
