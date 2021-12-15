@@ -1,0 +1,102 @@
+Resources:
+  Website:
+    Type: AWS::S3::Bucket
+    Properties:
+      # AccessControl: Private
+      WebsiteConfiguration:
+        ErrorDocument: index.html
+        IndexDocument: index.html
+
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn:
+      - DistributionOriginAccessIdentity
+    Properties:
+      PolicyDocument:
+        Id: WebApplicationGetPolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: CloudFrontGetObjectsPolicy
+            Effect: Allow
+            Action: 's3:GetObject'
+            Principal:
+              AWS: !Sub "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${DistributionOriginAccessIdentity}"
+            Resource: 
+              - !Sub arn:aws:s3:::${Website}
+              - !Sub arn:aws:s3:::${Website}/*
+          # - 
+          #   Effect: Allow
+          #   Action: 's3:*'
+          #   Principal:
+          #     AWS: !Sub arn:aws:iam::${AccountNumber}:role/<code-build-role-name-ref>
+          #     AWS: !Ref <code-build-role-ref>
+          #   Resource: 
+          #     - !Sub arn:aws:s3:::${Website}
+          #     - !Sub arn:aws:s3:::${Website}/*
+      Bucket: !Ref Website
+
+  DistributionOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: Web
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    DependsOn:
+      - Website
+      - DistributionOriginAccessIdentity
+    Properties:
+      DistributionConfig:
+        Origins:
+          - 
+            # Use the Website as the CDN origin
+            DomainName: !GetAtt Website.DomainName
+            Id: !Ref Website
+            # CustomOriginConfig:
+            #   HTTPPort: 80
+            #   HTTPSPort: 443
+            #   OriginProtocolPolicy: https-only
+            S3OriginConfig:
+              OriginAccessIdentity: !Join 
+                - ''
+                - - 'origin-access-identity/cloudfront/' 
+                  - !Ref  DistributionOriginAccessIdentity
+        Enabled: true
+        DefaultRootObject: index.html
+        ## Since the Single Page App is taking care of the routing we need to make sure ever path is served with index.html
+        # Configure the caching behavior for our CDN
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        DefaultCacheBehavior: 
+          AllowedMethods:
+            - DELETE
+            - GET
+            - HEAD
+            - OPTIONS
+            - PATCH
+            - POST
+            - PUT
+          MinTTL: 86400  # 1 day
+          MaxTTL: 31536000  # 1 year
+          ForwardedValues: 
+            QueryString: true
+            Cookies:
+              Forward: none
+          ## The origin id defined above
+          TargetOriginId: !Ref Website
+          ViewerProtocolPolicy: "redirect-to-https"   # we want to force HTTPS
+        ## The certificate to use when viewers use HTTPS to request objects.
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: 'true'
+
+Outputs:
+  WebSiteUrl:
+    Value: {"Fn::GetAtt": [Website, WebsiteURL]}
+  WebSiteBucket:
+    Value: {Ref: Website}
+  WebCloudfrontEndpoint:
+    Description: Endpoint for Web Cloudfront distribution
+    Value: !GetAtt [Distribution, DomainName]
